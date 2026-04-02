@@ -102,6 +102,7 @@ class Backtester:
         leverage: int = 2,
         fee_rate: float = TAKER_FEE_RATE,
         min_candles_for_signal: int = 100,
+        sl_cooldown_candles: int = 4,
     ):
         self.regime_detector = regime_detector or RegimeDetector()
         self.signal_gen = signal_generator or SignalGenerator()
@@ -109,6 +110,7 @@ class Backtester:
         self.leverage = leverage
         self.fee_rate = fee_rate
         self.min_candles = min_candles_for_signal
+        self.sl_cooldown_candles = sl_cooldown_candles
 
     def run(self, df: pd.DataFrame) -> List[WindowResult]:
         """
@@ -166,6 +168,7 @@ class Backtester:
         current_trade_signal: TradingSignal = None
         entry_time = None
         entry_price = None
+        sl_cooldown = 0  # candles remaining before we can enter again after a SL
 
         for i in range(self.min_candles, len(df)):
             candle = df.iloc[i]
@@ -186,8 +189,14 @@ class Backtester:
                     result.trades.append(trade)
                     in_position = False
                     current_trade_signal = None
+                    if hit_sl:
+                        sl_cooldown = self.sl_cooldown_candles
 
             else:
+                if sl_cooldown > 0:
+                    sl_cooldown -= 1
+                    continue
+
                 # Generate signal for this candle
                 regime = Regime(candle['regime'])
                 signal = self.signal_gen.generate(slice_df, regime)

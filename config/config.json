@@ -1,6 +1,6 @@
 {
   "symbol": "ETHUSDT",
-  "interval": "15m",
+  "interval": "1h",
   "leverage": 2,
   "investment_usdt": 500,
   "loop_interval_secs": 60,
