@@ -137,7 +137,8 @@ class SignalGenerator:
         if regime in (Regime.TRENDING_UP, Regime.TRENDING_DOWN):
             return self._trend_signal(last, current_price, atr, regime)
         else:
-            return self._range_signal(last, current_price, atr, regime)
+            # Ranging regime disabled: consistently 27% WR, losing after fees
+            return self._hold(current_price, atr, regime, "Ranging regime — skipping (below break-even historically)")
 
     def _trend_signal(self, last, price, atr, regime) -> TradingSignal:
         """

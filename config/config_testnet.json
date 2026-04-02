@@ -16,7 +16,7 @@
 
   "signal": {
     "atr_sl_multiplier": 1.0,
-    "atr_tp_multiplier": 2.0,
+    "atr_tp_multiplier": 3.0,
     "min_rr": 1.8,
     "rsi_oversold": 30.0,
     "rsi_overbought": 70.0,
