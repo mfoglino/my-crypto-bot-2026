@@ -3,15 +3,15 @@ Regime-Aware Signal Generator
 
 Generates trading signals based on the current market regime:
 
-  TRENDING_UP:   Look for LONG entries on pullbacks to EMA21
-  TRENDING_DOWN: Look for SHORT entries on bounces to EMA21
+  TRENDING_UP:   LONG on pullback to EMA21 (price dips to EMA21, RSI 40-60)
+  TRENDING_DOWN: SHORT on bounce to EMA21 (price bounces to EMA21, RSI 40-60)
   RANGING:       RSI extremes + Bollinger Band touches
 
-For every signal, we also compute ATR-based TP and SL so the
-TradingManager knows exactly where to exit.
-
-Minimum R:R enforced: 2:1 (TP = 2 * SL distance).
-Trades that don't meet this are filtered out.
+Why pullback instead of crossover?
+  Crossover entry = entering at the peak of the initial move → high chance of
+  immediate reversal / SL hit (confirmed by 27% win rate in v1).
+  Pullback entry = price retraces to the moving average, trend resumes →
+  better price, more room before SL, trend already confirmed.
 """
 
 from dataclasses import dataclass
@@ -58,19 +58,26 @@ class SignalGenerator:
     Parameters
     ----------
     atr_sl_multiplier : float
-        Stop loss = entry ± (atr * this). Default 1.0
+        Stop loss distance = atr * this. Default 1.0
     atr_tp_multiplier : float
-        Take profit = entry ± (atr * this). Default 2.0 → R:R = 2:1
+        Take profit distance = atr * this. Default 2.0 → R:R = 2:1
     min_rr : float
-        Minimum acceptable R:R ratio. Signals below this are filtered.
+        Minimum acceptable R:R. Signals below this are filtered.
     rsi_oversold : float
-        RSI threshold for RANGING LONG signals. Default 30.
+        RSI threshold for RANGING LONG. Default 30.
     rsi_overbought : float
-        RSI threshold for RANGING SHORT signals. Default 70.
+        RSI threshold for RANGING SHORT. Default 70.
     ema_fast : int
-        Fast EMA for trend-following entries.
+        Fast EMA period. Default 9.
     ema_slow : int
-        Slow EMA for trend-following entries (pullback target).
+        Slow EMA period used as pullback target. Default 21.
+    pullback_tolerance : float
+        How close to EMA21 price must be to count as a pullback.
+        0.005 = within 0.5% of EMA21. Default 0.005.
+    rsi_pullback_min : float
+        RSI floor for trend pullback entries. Below this = possible reversal.
+    rsi_pullback_max : float
+        RSI ceiling for trend pullback entries. Above this = still extended.
     """
 
     def __init__(
@@ -82,6 +89,9 @@ class SignalGenerator:
         rsi_overbought: float = 70.0,
         ema_fast: int = 9,
         ema_slow: int = 21,
+        pullback_tolerance: float = 0.005,
+        rsi_pullback_min: float = 40.0,
+        rsi_pullback_max: float = 60.0,
     ):
         self.atr_sl_multiplier = atr_sl_multiplier
         self.atr_tp_multiplier = atr_tp_multiplier
@@ -90,13 +100,16 @@ class SignalGenerator:
         self.rsi_overbought = rsi_overbought
         self.ema_fast = ema_fast
         self.ema_slow = ema_slow
+        self.pullback_tolerance = pullback_tolerance
+        self.rsi_pullback_min = rsi_pullback_min
+        self.rsi_pullback_max = rsi_pullback_max
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df[f'ema_{self.ema_fast}'] = df['close'].ewm(span=self.ema_fast, adjust=False).mean()
         df[f'ema_{self.ema_slow}'] = df['close'].ewm(span=self.ema_slow, adjust=False).mean()
 
-        # RSI
+        # RSI (Wilder's smoothing via ewm com=period-1)
         delta = df['close'].diff()
         gain = delta.where(delta > 0, 0.0).ewm(com=13, adjust=False).mean()
         loss = (-delta.where(delta < 0, 0.0)).ewm(com=13, adjust=False).mean()
@@ -108,88 +121,108 @@ class SignalGenerator:
         std20 = df['close'].rolling(20).std()
         df['bb_upper'] = sma20 + 2 * std20
         df['bb_lower'] = sma20 - 2 * std20
-        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / sma20
 
         return df
 
     def generate(self, df: pd.DataFrame, regime: Regime) -> TradingSignal:
-        """
-        Generate a signal for the current candle given the detected regime.
-
-        Args:
-            df: OHLCV dataframe, enriched with 'atr' column from RegimeDetector.
-            regime: Current market regime.
-
-        Returns:
-            TradingSignal with entry, TP, SL and reason.
-        """
         df = self._add_indicators(df)
         last = df.iloc[-1]
-        prev = df.iloc[-2]
 
         current_price = float(last['close'])
         atr = float(last['atr'])
 
         if regime == Regime.NEUTRAL:
-            return self._hold(current_price, atr, regime, "Regime is NEUTRAL — waiting for clearer trend")
+            return self._hold(current_price, atr, regime, "Regime NEUTRAL — skipping")
 
         if regime in (Regime.TRENDING_UP, Regime.TRENDING_DOWN):
-            return self._trend_signal(last, prev, current_price, atr, regime)
-        else:  # RANGING
-            return self._range_signal(last, prev, current_price, atr, regime)
+            return self._trend_signal(last, current_price, atr, regime)
+        else:
+            return self._range_signal(last, current_price, atr, regime)
 
-    def _trend_signal(self, last, prev, price, atr, regime) -> TradingSignal:
+    def _trend_signal(self, last, price, atr, regime) -> TradingSignal:
         """
-        Trend-following logic:
-        - LONG: EMA9 crosses above EMA21 (bullish crossover)
-        - SHORT: EMA9 crosses below EMA21 (bearish crossover)
+        Pullback-to-EMA21 entry:
 
-        We only take crossovers — not chasing existing trends.
-        This naturally filters out overtrading in strong trends.
+        TRENDING_UP:
+          - EMA9 > EMA21 (uptrend confirmed by alignment)
+          - Price pulled back to within `pullback_tolerance` of EMA21
+          - RSI in [40, 60]: cooled off but not breaking down
+          → LONG from the pullback
+
+        TRENDING_DOWN:
+          - EMA9 < EMA21 (downtrend confirmed)
+          - Price bounced up to within `pullback_tolerance` of EMA21
+          - RSI in [40, 60]: bounced but not overbought
+          → SHORT from the bounce
         """
-        ema_fast_now = float(last[f'ema_{self.ema_fast}'])
-        ema_slow_now = float(last[f'ema_{self.ema_slow}'])
-        ema_fast_prev = float(prev[f'ema_{self.ema_fast}'])
-        ema_slow_prev = float(prev[f'ema_{self.ema_slow}'])
+        ema_fast = float(last[f'ema_{self.ema_fast}'])
+        ema_slow = float(last[f'ema_{self.ema_slow}'])
+        rsi = float(last['rsi'])
 
-        bullish_cross = ema_fast_prev <= ema_slow_prev and ema_fast_now > ema_slow_now
-        bearish_cross = ema_fast_prev >= ema_slow_prev and ema_fast_now < ema_slow_now
+        if regime == Regime.TRENDING_UP:
+            trend_aligned = ema_fast > ema_slow
+            if not trend_aligned:
+                return self._hold(price, atr, regime, f"EMA alignment broken (EMA{self.ema_fast} < EMA{self.ema_slow})")
 
-        if regime == Regime.TRENDING_UP and bullish_cross:
-            sl = price - atr * self.atr_sl_multiplier
-            tp = price + atr * self.atr_tp_multiplier
-            signal = TradingSignal(
-                signal=SignalType.LONG, regime=regime,
-                entry_price=price, take_profit=tp, stop_loss=sl,
-                atr=atr, reason=f"EMA{self.ema_fast}/EMA{self.ema_slow} bullish crossover in uptrend"
-            )
-            return self._filter_rr(signal, price, atr, regime)
+            near_ema = price <= ema_slow * (1 + self.pullback_tolerance)
+            rsi_ok = self.rsi_pullback_min <= rsi <= self.rsi_pullback_max
 
-        if regime == Regime.TRENDING_DOWN and bearish_cross:
-            sl = price + atr * self.atr_sl_multiplier
-            tp = price - atr * self.atr_tp_multiplier
-            signal = TradingSignal(
-                signal=SignalType.SHORT, regime=regime,
-                entry_price=price, take_profit=tp, stop_loss=sl,
-                atr=atr, reason=f"EMA{self.ema_fast}/EMA{self.ema_slow} bearish crossover in downtrend"
-            )
-            return self._filter_rr(signal, price, atr, regime)
+            if near_ema and rsi_ok:
+                sl = price - atr * self.atr_sl_multiplier
+                tp = price + atr * self.atr_tp_multiplier
+                signal = TradingSignal(
+                    signal=SignalType.LONG, regime=regime,
+                    entry_price=price, take_profit=tp, stop_loss=sl,
+                    atr=atr,
+                    reason=f"Pullback to EMA{self.ema_slow} in uptrend (RSI={rsi:.1f})"
+                )
+                return self._filter_rr(signal, price, atr, regime)
 
-        direction = "up" if regime == Regime.TRENDING_UP else "down"
-        return self._hold(price, atr, regime, f"Trending {direction} — waiting for EMA crossover")
+            reasons = []
+            if not near_ema:
+                reasons.append(f"price {price:.2f} not near EMA{self.ema_slow} {ema_slow:.2f}")
+            if not rsi_ok:
+                reasons.append(f"RSI={rsi:.1f} outside [{self.rsi_pullback_min},{self.rsi_pullback_max}]")
+            return self._hold(price, atr, regime, f"Uptrend — waiting for pullback: {', '.join(reasons)}")
 
-    def _range_signal(self, last, prev, price, atr, regime) -> TradingSignal:
+        else:  # TRENDING_DOWN
+            trend_aligned = ema_fast < ema_slow
+            if not trend_aligned:
+                return self._hold(price, atr, regime, f"EMA alignment broken (EMA{self.ema_fast} > EMA{self.ema_slow})")
+
+            near_ema = price >= ema_slow * (1 - self.pullback_tolerance)
+            rsi_ok = self.rsi_pullback_min <= rsi <= self.rsi_pullback_max
+
+            if near_ema and rsi_ok:
+                sl = price + atr * self.atr_sl_multiplier
+                tp = price - atr * self.atr_tp_multiplier
+                signal = TradingSignal(
+                    signal=SignalType.SHORT, regime=regime,
+                    entry_price=price, take_profit=tp, stop_loss=sl,
+                    atr=atr,
+                    reason=f"Bounce to EMA{self.ema_slow} in downtrend (RSI={rsi:.1f})"
+                )
+                return self._filter_rr(signal, price, atr, regime)
+
+            reasons = []
+            if not near_ema:
+                reasons.append(f"price {price:.2f} not near EMA{self.ema_slow} {ema_slow:.2f}")
+            if not rsi_ok:
+                reasons.append(f"RSI={rsi:.1f} outside [{self.rsi_pullback_min},{self.rsi_pullback_max}]")
+            return self._hold(price, atr, regime, f"Downtrend — waiting for bounce: {', '.join(reasons)}")
+
+    def _range_signal(self, last, price, atr, regime) -> TradingSignal:
         """
-        Mean-reversion logic for ranging markets:
-        - LONG: RSI < oversold AND price touches lower Bollinger Band
-        - SHORT: RSI > overbought AND price touches upper Bollinger Band
+        Mean-reversion in ranging markets:
+        - LONG: RSI < oversold AND price near BB lower band
+        - SHORT: RSI > overbought AND price near BB upper band
         """
         rsi = float(last['rsi'])
         bb_upper = float(last['bb_upper'])
         bb_lower = float(last['bb_lower'])
 
-        near_lower = price <= bb_lower * 1.002  # within 0.2% of lower band
-        near_upper = price >= bb_upper * 0.998  # within 0.2% of upper band
+        near_lower = price <= bb_lower * 1.002
+        near_upper = price >= bb_upper * 0.998
 
         if rsi < self.rsi_oversold and near_lower:
             sl = price - atr * self.atr_sl_multiplier
@@ -197,7 +230,7 @@ class SignalGenerator:
             signal = TradingSignal(
                 signal=SignalType.LONG, regime=regime,
                 entry_price=price, take_profit=tp, stop_loss=sl,
-                atr=atr, reason=f"RSI oversold ({rsi:.1f}) + BB lower touch in ranging market"
+                atr=atr, reason=f"RSI oversold ({rsi:.1f}) + BB lower touch"
             )
             return self._filter_rr(signal, price, atr, regime)
 
@@ -207,14 +240,13 @@ class SignalGenerator:
             signal = TradingSignal(
                 signal=SignalType.SHORT, regime=regime,
                 entry_price=price, take_profit=tp, stop_loss=sl,
-                atr=atr, reason=f"RSI overbought ({rsi:.1f}) + BB upper touch in ranging market"
+                atr=atr, reason=f"RSI overbought ({rsi:.1f}) + BB upper touch"
             )
             return self._filter_rr(signal, price, atr, regime)
 
         return self._hold(price, atr, regime, f"Ranging — RSI={rsi:.1f}, no extreme reached")
 
     def _filter_rr(self, signal: TradingSignal, price, atr, regime) -> TradingSignal:
-        """Reject the signal if R:R is below minimum."""
         rr = signal.risk_reward
         if rr < self.min_rr:
             logging.warning(f"Signal rejected: R:R={rr:.2f} < minimum {self.min_rr}")

@@ -21,6 +21,9 @@
     "rsi_oversold": 30.0,
     "rsi_overbought": 70.0,
     "ema_fast": 9,
-    "ema_slow": 21
+    "ema_slow": 21,
+    "pullback_tolerance": 0.005,
+    "rsi_pullback_min": 40.0,
+    "rsi_pullback_max": 60.0
   }
 }

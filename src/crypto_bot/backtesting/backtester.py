@@ -280,8 +280,6 @@ class Backtester:
         peak = np.maximum.accumulate(equity)
         max_dd = float((peak - equity).max())
 
-        regime_counts = pd.Series([t.regime for t in all_trades]).value_counts()
-
         print("\n" + "="*60)
         print("WALK-FORWARD BACKTEST SUMMARY")
         print("="*60)
@@ -293,9 +291,25 @@ class Backtester:
         print(f"Total PNL:        {total_pnl:+.2%} (leveraged, after fees)")
         print(f"Avg PNL/trade:    {total_pnl/total:+.2%}")
         print(f"Max drawdown:     {max_dd:.2%}")
-        print(f"\nRegime breakdown:")
-        for regime, count in regime_counts.items():
-            print(f"  {regime}: {count} trades ({count/total:.1%})")
+
+        print(f"\nPer-regime breakdown:")
+        regimes = pd.Series([t.regime for t in all_trades]).unique()
+        for regime in sorted(regimes):
+            r_trades = [t for t in all_trades if t.regime == regime]
+            r_wins = sum(1 for t in r_trades if t.pnl_pct > 0)
+            r_pnl = sum(t.pnl_pct_leveraged for t in r_trades)
+            r_tp = sum(1 for t in r_trades if t.exit_reason == 'tp')
+            r_sl = sum(1 for t in r_trades if t.exit_reason == 'sl')
+            print(f"  {regime:<16} {len(r_trades):>3} trades | "
+                  f"WR={r_wins/len(r_trades):.0%} | "
+                  f"PNL={r_pnl:+.1%} | "
+                  f"TP={r_tp} SL={r_sl}")
+
+        print(f"\nPer-window PNL:")
+        for r in results:
+            marker = "OK" if r.total_pnl_pct >= 0 else "--"
+            print(f"  [{marker}] {r.start} → {r.end}  "
+                  f"{r.n_trades:>2} trades | WR={r.win_rate:.0%} | PNL={r.total_pnl_pct:+.1%}")
         print("="*60)
 
     def to_dataframe(self, results: List[WindowResult]) -> pd.DataFrame:
