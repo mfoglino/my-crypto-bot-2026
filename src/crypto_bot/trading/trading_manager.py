@@ -185,8 +185,8 @@ class TradingManager:
             logging.error(f"Emergency close failed: {e}")
 
     def _fetch_candles(self) -> pd.DataFrame:
-        """Fetch the last N candles from Binance REST API."""
-        klines = self.data.client.get_klines(
+        """Fetch the last N candles from Binance Futures REST API."""
+        klines = self.data.client.futures_klines(
             symbol=self.symbol,
             interval=self.interval,
             limit=self.candles_lookback
