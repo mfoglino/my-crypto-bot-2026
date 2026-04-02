@@ -71,12 +71,16 @@ def main():
 
     signal_gen = SignalGenerator(
         atr_sl_multiplier=signal_cfg.get('atr_sl_multiplier', 1.0),
-        atr_tp_multiplier=signal_cfg.get('atr_tp_multiplier', 2.0),
+        atr_tp_multiplier=signal_cfg.get('atr_tp_multiplier', 3.0),
         min_rr=signal_cfg.get('min_rr', 1.8),
         rsi_oversold=signal_cfg.get('rsi_oversold', 30.0),
         rsi_overbought=signal_cfg.get('rsi_overbought', 70.0),
         ema_fast=signal_cfg.get('ema_fast', 9),
         ema_slow=signal_cfg.get('ema_slow', 21),
+        pullback_tolerance=signal_cfg.get('pullback_tolerance', 0.005),
+        rsi_pullback_min=signal_cfg.get('rsi_pullback_min', 40.0),
+        rsi_pullback_max=signal_cfg.get('rsi_pullback_max', 60.0),
+        adx_max=signal_cfg.get('adx_max', 40.0),
     )
 
     backtester = Backtester(

@@ -24,6 +24,7 @@
     "ema_slow": 21,
     "pullback_tolerance": 0.005,
     "rsi_pullback_min": 40.0,
-    "rsi_pullback_max": 60.0
+    "rsi_pullback_max": 60.0,
+    "adx_max": 40.0
   }
 }

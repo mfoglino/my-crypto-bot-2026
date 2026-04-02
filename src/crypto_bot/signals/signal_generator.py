@@ -92,6 +92,7 @@ class SignalGenerator:
         pullback_tolerance: float = 0.005,
         rsi_pullback_min: float = 40.0,
         rsi_pullback_max: float = 60.0,
+        adx_max: float = 40.0,
     ):
         self.atr_sl_multiplier = atr_sl_multiplier
         self.atr_tp_multiplier = atr_tp_multiplier
@@ -103,6 +104,7 @@ class SignalGenerator:
         self.pullback_tolerance = pullback_tolerance
         self.rsi_pullback_min = rsi_pullback_min
         self.rsi_pullback_max = rsi_pullback_max
+        self.adx_max = adx_max
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -163,6 +165,11 @@ class SignalGenerator:
 
         candle_low = float(last['low'])
         candle_high = float(last['high'])
+        adx = float(last['adx']) if 'adx' in last.index else 0.0
+
+        # Skip if trend is parabolic — bounce-to-EMA21 fails in extreme ADX conditions
+        if adx > self.adx_max:
+            return self._hold(price, atr, regime, f"ADX={adx:.1f} too high (>{self.adx_max}) — parabolic move, skip")
 
         if regime == Regime.TRENDING_UP:
             trend_aligned = ema_fast > ema_slow
