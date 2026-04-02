@@ -6,7 +6,10 @@ dist/
 build/
 .venv/
 venv/
+_venv/
 logs/
 *.log
 *.csv
 .DS_Store
+.idea/
+.python-version
