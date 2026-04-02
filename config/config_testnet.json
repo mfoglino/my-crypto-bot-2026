@@ -1,0 +1,26 @@
+{
+  "symbol": "ETHUSDT",
+  "interval": "15m",
+  "leverage": 2,
+  "investment_usdt": 100,
+  "loop_interval_secs": 60,
+  "candles_lookback": 300,
+
+  "regime": {
+    "adx_period": 14,
+    "adx_trend_threshold": 25.0,
+    "adx_range_threshold": 20.0,
+    "ema_slope_period": 50,
+    "ema_slope_lookback": 5
+  },
+
+  "signal": {
+    "atr_sl_multiplier": 1.0,
+    "atr_tp_multiplier": 2.0,
+    "min_rr": 1.8,
+    "rsi_oversold": 30.0,
+    "rsi_overbought": 70.0,
+    "ema_fast": 9,
+    "ema_slow": 21
+  }
+}

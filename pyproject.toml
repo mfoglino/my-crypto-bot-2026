@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "crypto-bot-2026"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "python-binance>=1.0.19",
+    "pandas>=2.0.0",
+    "numpy<2.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=1.10,<2.0",
+    "requests>=2.31.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
