@@ -159,57 +159,60 @@ class SignalGenerator:
         ema_slow = float(last[f'ema_{self.ema_slow}'])
         rsi = float(last['rsi'])
 
+        candle_low = float(last['low'])
+        candle_high = float(last['high'])
+
         if regime == Regime.TRENDING_UP:
             trend_aligned = ema_fast > ema_slow
             if not trend_aligned:
                 return self._hold(price, atr, regime, f"EMA alignment broken (EMA{self.ema_fast} < EMA{self.ema_slow})")
 
-            near_ema = price <= ema_slow * (1 + self.pullback_tolerance)
-            rsi_ok = self.rsi_pullback_min <= rsi <= self.rsi_pullback_max
+            # Require candle to have touched EMA21 (low <= EMA21) and closed back above it.
+            # This confirms support held — not just "being near" EMA21.
+            touched_support = candle_low <= ema_slow * (1 + self.pullback_tolerance)
+            bounced = price >= ema_slow  # close is back above EMA21
+            rsi_ok = rsi < self.rsi_pullback_max  # not overbought
 
-            if near_ema and rsi_ok:
+            if touched_support and bounced and rsi_ok:
                 sl = price - atr * self.atr_sl_multiplier
                 tp = price + atr * self.atr_tp_multiplier
                 signal = TradingSignal(
                     signal=SignalType.LONG, regime=regime,
                     entry_price=price, take_profit=tp, stop_loss=sl,
                     atr=atr,
-                    reason=f"Pullback to EMA{self.ema_slow} in uptrend (RSI={rsi:.1f})"
+                    reason=f"Candle touched EMA{self.ema_slow} and bounced (RSI={rsi:.1f})"
                 )
                 return self._filter_rr(signal, price, atr, regime)
 
-            reasons = []
-            if not near_ema:
-                reasons.append(f"price {price:.2f} not near EMA{self.ema_slow} {ema_slow:.2f}")
-            if not rsi_ok:
-                reasons.append(f"RSI={rsi:.1f} outside [{self.rsi_pullback_min},{self.rsi_pullback_max}]")
-            return self._hold(price, atr, regime, f"Uptrend — waiting for pullback: {', '.join(reasons)}")
+            return self._hold(price, atr, regime,
+                f"Uptrend — waiting for EMA{self.ema_slow} touch+bounce "
+                f"(low={candle_low:.2f} EMA={ema_slow:.2f} close={price:.2f})")
 
         else:  # TRENDING_DOWN
             trend_aligned = ema_fast < ema_slow
             if not trend_aligned:
                 return self._hold(price, atr, regime, f"EMA alignment broken (EMA{self.ema_fast} > EMA{self.ema_slow})")
 
-            near_ema = price >= ema_slow * (1 - self.pullback_tolerance)
-            rsi_ok = self.rsi_pullback_min <= rsi <= self.rsi_pullback_max
+            # Require candle to have touched EMA21 (high >= EMA21) and closed back below it.
+            # Confirms resistance held.
+            touched_resistance = candle_high >= ema_slow * (1 - self.pullback_tolerance)
+            rejected = price <= ema_slow  # close is back below EMA21
+            rsi_ok = rsi > self.rsi_pullback_min  # not oversold
 
-            if near_ema and rsi_ok:
+            if touched_resistance and rejected and rsi_ok:
                 sl = price + atr * self.atr_sl_multiplier
                 tp = price - atr * self.atr_tp_multiplier
                 signal = TradingSignal(
                     signal=SignalType.SHORT, regime=regime,
                     entry_price=price, take_profit=tp, stop_loss=sl,
                     atr=atr,
-                    reason=f"Bounce to EMA{self.ema_slow} in downtrend (RSI={rsi:.1f})"
+                    reason=f"Candle touched EMA{self.ema_slow} and was rejected (RSI={rsi:.1f})"
                 )
                 return self._filter_rr(signal, price, atr, regime)
 
-            reasons = []
-            if not near_ema:
-                reasons.append(f"price {price:.2f} not near EMA{self.ema_slow} {ema_slow:.2f}")
-            if not rsi_ok:
-                reasons.append(f"RSI={rsi:.1f} outside [{self.rsi_pullback_min},{self.rsi_pullback_max}]")
-            return self._hold(price, atr, regime, f"Downtrend — waiting for bounce: {', '.join(reasons)}")
+            return self._hold(price, atr, regime,
+                f"Downtrend — waiting for EMA{self.ema_slow} touch+rejection "
+                f"(high={candle_high:.2f} EMA={ema_slow:.2f} close={price:.2f})")
 
     def _range_signal(self, last, price, atr, regime) -> TradingSignal:
         """
