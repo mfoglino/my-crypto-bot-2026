@@ -1,8 +1,8 @@
 {
   "symbol": "ETHUSDT",
-  "price_lower": 1600,
-  "price_upper": 2400,
-  "n_grids": 8,
+  "price_lower": 1700,
+  "price_upper": 2300,
+  "n_grids": 12,
   "total_investment_usdt": 100,
   "leverage": 2,
   "fee_rate": 0.0004
