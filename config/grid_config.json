@@ -1,0 +1,17 @@
+{
+  "symbol": "ETHUSDT",
+  "price_lower": 1600,
+  "price_upper": 2400,
+  "n_grids": 8,
+  "total_investment_usdt": 400,
+  "leverage": 2,
+  "fee_rate": 0.0004,
+
+  "_comment": {
+    "grid_spacing": "$100 per level (5% of mid-range $2000)",
+    "usdt_per_grid": "$50 per slot",
+    "net_profit_per_cycle": "~4.92% on the $50 slot = ~$2.46",
+    "risk": "If ETH falls below $1600, full $400 deployed at a loss",
+    "adjust_price_lower_upper": "Update these when ETH price moves significantly"
+  }
+}
