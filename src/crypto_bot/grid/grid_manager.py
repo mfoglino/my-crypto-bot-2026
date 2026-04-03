@@ -54,12 +54,11 @@ class GridManager:
         self.orders.futures_change_leverage(self.config.symbol, self.config.leverage)
         self._cancel_all_orders()
 
-        placed = 0
         for i, level in enumerate(self.levels[:-1]):  # all but the top level
             if level < current_price:
                 self._place_buy(i)
-                placed += 1
 
+        placed = len(self.buy_orders)
         logging.info(f"Grid setup complete: {placed} BUY orders placed")
 
     def run(self, poll_interval_secs: int = 30, max_iterations: int = -1):

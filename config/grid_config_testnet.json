@@ -3,7 +3,7 @@
   "price_lower": 1700,
   "price_upper": 2300,
   "n_grids": 12,
-  "total_investment_usdt": 100,
+  "total_investment_usdt": 240,
   "leverage": 2,
   "fee_rate": 0.0004
 }

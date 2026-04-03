@@ -52,17 +52,20 @@ def main():
 
     config = GridConfig.from_dict(raw)
 
-    api_key = os.getenv("BINANCE_API_KEY")
-    api_secret = os.getenv("BINANCE_API_SECRET")
-
-    if not api_key or not api_secret:
-        logging.error("Missing BINANCE_API_KEY or BINANCE_API_SECRET in .env")
-        sys.exit(1)
-
     if args.testnet:
+        api_key = os.getenv("BINANCE_TESTNET_API_KEY")
+        api_secret = os.getenv("BINANCE_TESTNET_API_SECRET")
+        if not api_key or not api_secret:
+            logging.error("Missing BINANCE_TESTNET_API_KEY or BINANCE_TESTNET_API_SECRET in .env")
+            sys.exit(1)
         logging.info("Running on TESTNET")
         client = Client(api_key, api_secret, testnet=True)
     else:
+        api_key = os.getenv("BINANCE_API_KEY")
+        api_secret = os.getenv("BINANCE_API_SECRET")
+        if not api_key or not api_secret:
+            logging.error("Missing BINANCE_API_KEY or BINANCE_API_SECRET in .env")
+            sys.exit(1)
         logging.warning("Running on MAINNET — real money!")
         client = Client(api_key, api_secret)
 
